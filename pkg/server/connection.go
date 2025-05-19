@@ -43,7 +43,7 @@ func (c *connection) withPublicKey(publicKey string) *connection {
 func (c *connection) writeJSON(message any) {
 	bs, err := json.Marshal(message)
 	if err != nil {
-		fmt.Println("could not json marshal message:", err)
+		slog.Error("could not marshal json", "error", err)
 		return
 	}
 	_, err = c.conn.Write(append(bs, '\n'))
