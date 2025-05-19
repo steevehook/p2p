@@ -53,6 +53,8 @@ exit
 
 ```shell
 make test
+
+make converage
 ```
 
 ## Build
