@@ -1,4 +1,5 @@
 .bin/
+.coverage/
 .idea/
 testdata/
 .DS_Store
