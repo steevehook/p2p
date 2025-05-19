@@ -16,7 +16,7 @@ const (
 
 type connectionSuite struct {
 	suite.Suite
-	tcpConn       *mockConn
+	tcpConn       *dummyConn
 	tcpConnReader *bytes.Buffer
 	tcpConnWriter *bytes.Buffer
 	conn          *connection
@@ -25,7 +25,7 @@ type connectionSuite struct {
 func (s *connectionSuite) SetupTest() {
 	s.tcpConnReader = &bytes.Buffer{}
 	s.tcpConnWriter = &bytes.Buffer{}
-	s.tcpConn = &mockConn{
+	s.tcpConn = &dummyConn{
 		Reader: s.tcpConnReader,
 		Writer: s.tcpConnWriter,
 	}
