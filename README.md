@@ -48,3 +48,15 @@ pay <amount>
 # disconnect from the server
 exit
 ```
+
+## Test
+
+```shell
+make test
+```
+
+## Build
+
+```shell
+make bin
+```
