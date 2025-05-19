@@ -9,6 +9,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/steevehook/p2p/pkg/transport"
 )
@@ -132,6 +133,25 @@ func (c *connections) set(conn *connection) {
 	defer c.mu.Unlock()
 
 	c.data[conn.id] = conn
+}
+
+func (c *connections) warn(timeout time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if len(c.data) == 0 {
+		return
+	}
+
+	slog.Info("warning all connections")
+	for _, conn := range c.data {
+		conn.writeJSON(transport.Message[transport.InfoMessage]{
+			Type: transport.MessageTypeInfo,
+			Payload: transport.InfoMessage{
+				Text: fmt.Sprintf("host wants to shut down the server in: %s", timeout.String()),
+			},
+		})
+	}
 }
 
 func (c *connections) close() {

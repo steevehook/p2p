@@ -77,6 +77,8 @@ func (srv *Server) serve() {
 				logger.Error("could not close tcp listener", "error", err)
 			}
 
+			srv.connections.warn(srv.connectionsCloseTimeout)
+			<-time.After(srv.connectionsCloseTimeout)
 			srv.connections.close()
 
 			close(srv.exited)
