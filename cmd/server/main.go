@@ -25,6 +25,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	go func() {
+		if err = p2pServer.Start(); err != nil {
+			slog.Error("could not start the p2p server", "error", err)
+			os.Exit(1)
+		}
+	}()
+
 	select {
 	case <-stop:
 		p2pServer.Stop()

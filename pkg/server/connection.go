@@ -16,9 +16,9 @@ import (
 
 func newConnection(conn net.Conn) *connection {
 	return &connection{
-		conn:      conn,
-		exit:      make(chan struct{}),
-		messageCh: make(chan transport.Message[json.RawMessage]),
+		conn:     conn,
+		exit:     make(chan struct{}),
+		messages: make(chan transport.Message[json.RawMessage]),
 	}
 }
 
@@ -26,7 +26,7 @@ type connection struct {
 	id        string
 	publicKey string
 	conn      net.Conn
-	messageCh chan transport.Message[json.RawMessage]
+	messages  chan transport.Message[json.RawMessage]
 	exit      chan struct{}
 }
 
@@ -152,6 +152,8 @@ func (c *connections) warn(timeout time.Duration) {
 			},
 		})
 	}
+
+	<-time.After(timeout)
 }
 
 func (c *connections) close() {

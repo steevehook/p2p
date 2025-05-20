@@ -24,6 +24,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	go func() {
+		if err = p2pClient.Start(); err != nil {
+			fmt.Println("could not start the p2p client:", err)
+			os.Exit(1)
+		}
+	}()
+
 	select {
 	case <-stop:
 		fmt.Println("\nclient was stopped")

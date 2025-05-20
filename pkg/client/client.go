@@ -18,29 +18,23 @@ import (
 )
 
 func New(options ...option) (*Client, error) {
-	client := &Client{
-		address: "localhost:9000",
-		quit:    make(chan struct{}),
-		exited:  make(chan struct{}),
-	}
-	for _, opt := range options {
-		opt.apply(client)
-	}
-
 	keyPair, err := crypto.NewKeyPair()
 	if err != nil {
 		return nil, err
 	}
-	client.keyPair = keyPair
-	client.wallet = wallets.NewWallet(keyPair.ID())
 
-	conn, err := net.Dial("tcp", client.address)
-	if err != nil {
-		return nil, err
+	client := &Client{
+		address: "localhost:9000",
+		keyPair: keyPair,
+		wallet:  wallets.NewWallet(keyPair.ID()),
+		quit:    make(chan struct{}),
+		exited:  make(chan struct{}),
 	}
-	client.conn = newConnection(conn)
 
-	go client.start()
+	for _, opt := range options {
+		opt.apply(client)
+	}
+
 	return client, nil
 }
 
@@ -54,6 +48,37 @@ type Client struct {
 	quit         chan struct{}
 	exited       chan struct{}
 	stop         sync.Once
+}
+
+func (c *Client) Start() error {
+	conn, err := net.Dial("tcp", c.address)
+	if err != nil {
+		return err
+	}
+	c.conn = newConnection(conn)
+
+	id := c.keyPair.ID()
+	message := transport.Message[transport.IDMessage]{
+		Type: transport.MessageTypeID,
+		Payload: transport.IDMessage{
+			ID:        id,
+			PublicKey: c.keyPair.Base64XPublicKey(),
+		},
+	}
+	bs, err := transport.JSONEncode(message)
+	if err != nil {
+		return err
+	}
+
+	c.conn.writeLine(string(bs))
+	c.printRegular(fmt.Sprintf("welcome to the p2p server\n%s", id))
+
+	go c.read()
+	c.write()
+
+	<-c.quit
+	close(c.exited)
+	return nil
 }
 
 func (c *Client) Stop() {
@@ -77,28 +102,8 @@ func (c *Client) Exited() <-chan struct{} {
 	return c.exited
 }
 
-func (c *Client) start() {
-	id := c.keyPair.ID()
-	message := transport.Message[transport.IDMessage]{
-		Type: transport.MessageTypeID,
-		Payload: transport.IDMessage{
-			ID:        id,
-			PublicKey: c.keyPair.Base64XPublicKey(),
-		},
-	}
-	bs, _ := transport.JSONEncode(message)
-	c.conn.writeLine(string(bs))
-	c.printRegular(fmt.Sprintf("welcome to the p2p server\n%s", id))
-
-	go c.read()
-	c.write()
-
-	<-c.quit
-	close(c.exited)
-}
-
 // read reads all the messages either from the server or from the peered connection
-// and dispatches them to the appropriate command.
+// and dispatches them to the appropriate message processor.
 func (c *Client) read() {
 	reader := bufio.NewReader(c.conn.conn)
 

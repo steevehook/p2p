@@ -29,20 +29,11 @@ func New(options ...option) (*Server, error) {
 		opt.apply(srv)
 	}
 
-	l, err := net.Listen("tcp", fmt.Sprintf(":%d", srv.port))
-	if err != nil {
-		slog.Error("could not listen on port", "port", srv.port, "error", err)
-		return nil, err
-	}
-	srv.listener = l
-
-	go srv.serve()
 	return srv, nil
 }
 
 type Server struct {
 	port                    int
-	listener                net.Listener
 	connections             *connections
 	connectionsCloseTimeout time.Duration
 	tcpListenerDeadline     time.Duration
@@ -51,41 +42,33 @@ type Server struct {
 	stop                    sync.Once
 }
 
-func (srv *Server) Stop() {
-	srv.stop.Do(func() {
-		slog.Info("stopping the p2p server")
-		close(srv.quit)
-		<-srv.exited
-		slog.Info("p2p server successfully stopped")
-	})
-}
+// Start listens for incoming tcp connections and handles them.
+func (srv *Server) Start() error {
+	listener, e := net.Listen("tcp", fmt.Sprintf(":%d", srv.port))
+	if e != nil {
+		slog.Error("could not listen on port", "port", srv.port, "error", e)
+		return e
+	}
 
-func (srv *Server) Exited() <-chan struct{} {
-	return srv.exited
-}
-
-// serve listens for incoming tcp connections and handles them.
-func (srv *Server) serve() {
 	logger := slog.With("port", srv.port)
 	logger.Info("listening for connections")
 
 	for {
 		select {
 		case <-srv.quit:
-			err := srv.listener.Close()
+			err := listener.Close()
 			if err != nil {
 				logger.Error("could not close tcp listener", "error", err)
 			}
 
 			srv.connections.warn(srv.connectionsCloseTimeout)
-			<-time.After(srv.connectionsCloseTimeout)
 			srv.connections.close()
 
 			close(srv.exited)
-			return
+			return nil
 
 		default:
-			tcpListener := srv.listener.(*net.TCPListener)
+			tcpListener := listener.(*net.TCPListener)
 			err := tcpListener.SetDeadline(time.Now().Add(srv.tcpListenerDeadline))
 			if err != nil {
 				logger.Error("could not set tcp listener deadline", "error", err)
@@ -112,12 +95,25 @@ func (srv *Server) serve() {
 	}
 }
 
+func (srv *Server) Stop() {
+	srv.stop.Do(func() {
+		slog.Info("stopping the p2p server")
+		close(srv.quit)
+		<-srv.exited
+		slog.Info("p2p server successfully stopped")
+	})
+}
+
+func (srv *Server) Exited() <-chan struct{} {
+	return srv.exited
+}
+
 // handle handles individual connections that were accepted and identified by the server.
 func (srv *Server) handle(conn *connection) {
 	defer srv.connections.drop(conn.id)
 
-	messageCh := make(chan transport.Message[json.RawMessage])
-	exitCh := make(chan struct{})
+	messages := make(chan transport.Message[json.RawMessage])
+	exit := make(chan struct{})
 	scanner := bufio.NewScanner(conn.conn)
 
 	go func() {
@@ -135,23 +131,23 @@ func (srv *Server) handle(conn *connection) {
 
 			switch message.Type {
 			case transport.MessageTypeExit:
-				close(exitCh)
+				close(exit)
 			case transport.MessageTypeConnect:
 				// send the messages to the bridged connection channel
-				messageCh <- message
+				messages <- message
 			default:
 				// send the messages to the main loop channel
-				conn.messageCh <- message
+				conn.messages <- message
 			}
 		}
 	}()
 
 	for {
 		select {
-		case <-exitCh:
+		case <-exit:
 			close(conn.exit)
 			return
-		case message := <-messageCh:
+		case message := <-messages:
 			switch message.Type {
 			case transport.MessageTypeConnect:
 				var connectMessage transport.ConnectMessage
@@ -181,7 +177,7 @@ func (srv *Server) handle(conn *connection) {
 					continue
 				}
 
-				srv.bridge(conn, dstConn, exitCh)
+				srv.bridge(conn, dstConn, exit)
 			}
 		}
 	}
@@ -232,11 +228,11 @@ func (srv *Server) bridge(src, dst *connection, exit chan struct{}) {
 				return
 			case <-done:
 				return
-			case msg, ok := <-src.messageCh:
+			case message, ok := <-src.messages:
 				if !ok {
 					return
 				}
-				dst.writeJSON(msg)
+				dst.writeJSON(message)
 			}
 		}
 	}
