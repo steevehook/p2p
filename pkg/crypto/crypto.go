@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 
+	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/hkdf"
 )
@@ -212,4 +213,48 @@ func AESDecrypt(encoded string, aesKey []byte) ([]byte, error) {
 	}
 
 	return plaintext, nil
+}
+
+func ChaChaEncrypt(plaintext []byte, key []byte) (string, error) {
+	if len(key) != chacha20poly1305.KeySize {
+		return "", fmt.Errorf("invalid key length: %d bytes (expected %d)", len(key), chacha20poly1305.KeySize)
+	}
+
+	aead, err := chacha20poly1305.New(key)
+	if err != nil {
+		return "", fmt.Errorf("failed to create chacha20-poly1305: %w", err)
+	}
+
+	nonce := make([]byte, chacha20poly1305.NonceSize)
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", fmt.Errorf("failed to generate nonce: %w", err)
+	}
+
+	ciphertext := aead.Seal(nil, nonce, plaintext, nil)
+	message := append(nonce, ciphertext...)
+	return base64.StdEncoding.EncodeToString(message), nil
+}
+
+func ChaChaDecrypt(encoded string, key []byte) ([]byte, error) {
+	if len(key) != chacha20poly1305.KeySize {
+		return nil, fmt.Errorf("invalid key length: %d bytes (expected %d)", len(key), chacha20poly1305.KeySize)
+	}
+
+	message, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, fmt.Errorf("failed to base64 decode: %w", err)
+	}
+
+	aead, err := chacha20poly1305.New(key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create chacha20-poly1305: %w", err)
+	}
+
+	nonceSize := chacha20poly1305.NonceSize
+	if len(message) < nonceSize {
+		return nil, fmt.Errorf("malformed ciphertext: message too short")
+	}
+
+	nonce, ciphertext := message[:nonceSize], message[nonceSize:]
+	return aead.Open(nil, nonce, ciphertext, nil)
 }
