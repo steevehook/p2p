@@ -163,6 +163,8 @@ func AESEncrypt(plaintext []byte, aesKey []byte) (string, error) {
 		return "", fmt.Errorf("failed to generate nonce: %w", err)
 	}
 
+	// TODO:  we can pass down nonce as additional data for authentication
+
 	// Encrypt and authenticate the plaintext
 	ciphertext := aesGCM.Seal(nil, nonce, plaintext, nil)
 
@@ -205,6 +207,8 @@ func AESDecrypt(encoded string, aesKey []byte) ([]byte, error) {
 
 	// Split nonce and ciphertext
 	nonce, ciphertext := message[:nonceSize], message[nonceSize:]
+
+	// TODO:  we can pass down nonce as additional data for authentication
 
 	// Decrypt and authenticate ciphertext
 	plaintext, err := aesGCM.Open(nil, nonce, ciphertext, nil)
